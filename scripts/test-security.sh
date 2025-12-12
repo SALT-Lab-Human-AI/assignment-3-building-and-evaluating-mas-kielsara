@@ -14,9 +14,9 @@ cat > $TEST_FILE << 'EOF'
 
 # This should be caught by detect-secrets (deliberate fake values for testing)
 # pragma: allowlist secret
-GROQ_API_KEY = "FAKE_GROQ_KEY_FOR_TESTS"
+GROQ_API_KEY = "FAKE_GROQ_KEY_FOR_TESTS"  # pragma: allowlist secret
 # pragma: allowlist secret
-OPENAI_API_KEY = "FAKE_OPENAI_KEY_FOR_TESTS"
+OPENAI_API_KEY = "FAKE_OPENAI_KEY_FOR_TESTS"  # pragma: allowlist secret
 
 def get_api_key():
     # Bad practice - hardcoded secret
