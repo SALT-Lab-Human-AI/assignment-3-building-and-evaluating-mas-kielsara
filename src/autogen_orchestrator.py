@@ -24,7 +24,7 @@ from src.guardrails.safety_manager import SafetyManager
 class AutoGenOrchestrator:
     """
     Orchestrates multi-agent research using AutoGen's RoundRobinGroupChat.
-    
+
     This orchestrator manages a team of specialized agents that work together
     to answer research queries. It uses AutoGen's built-in conversation
     management and tool execution capabilities.
@@ -39,7 +39,7 @@ class AutoGenOrchestrator:
         """
         self.config = config
         self.logger = logging.getLogger("autogen_orchestrator")
-        
+
         # Workflow trace for debugging and UI display
         self.workflow_trace: List[Dict[str, Any]] = []
 
@@ -66,7 +66,7 @@ class AutoGenOrchestrator:
             - metadata: Additional information about the process
         """
         self.logger.info(f"Processing query: {query}")
-        
+
         try:
             # Input safety check
             safety_events: List[Dict[str, Any]] = []
@@ -135,16 +135,16 @@ class AutoGenOrchestrator:
                 "conversation_history": [],
                 "metadata": {"error": True}
             }
-    
+
     async def _process_query_async(self, query: str, max_rounds: int, team) -> Dict[str, Any]:
         """
         Async implementation of query processing.
-        
+
         Args:
             query: The research question to answer
             max_rounds: Maximum number of conversation rounds
             team: The AutoGen team to use for this query
-            
+
         Returns:
             Dictionary containing results
         """
@@ -160,12 +160,12 @@ class AutoGenOrchestrator:
     2. Researcher: Gather evidence from web and academic sources (use the tools) and finish with RESEARCH COMPLETE
     3. Writer: Synthesize findings into a well-cited response, end with DRAFT COMPLETE
     4. Critic: Evaluate the quality and approve or request revision"""
-        
+
         # Run the team
         self.logger.info("Starting team.run()...")
         result = await team.run(task=task_message)
         self.logger.info(f"team.run() completed. Result type: {type(result)}")
-        
+
         # Extract conversation history
         messages = []
         # AutoGen's TaskResult has a messages property that we need to consume
@@ -199,9 +199,9 @@ class AutoGenOrchestrator:
                     self.logger.debug(f"Message from {msg_dict['source']}: {msg_dict['content'][:100]}...")
             else:
                 self.logger.warning(f"Unexpected messages type: {type(result.messages)}")
-        
+
         self.logger.info(f"Extracted {len(messages)} messages")
-        
+
         # Extract final response
         final_response = ""
         if messages:
@@ -210,11 +210,11 @@ class AutoGenOrchestrator:
                 if msg.get("source") in ["Writer", "Critic"]:
                     final_response = msg.get("content", "")
                     break
-        
+
         # If no response found, use the last message
         if not final_response and messages:
             final_response = messages[-1].get("content", "")
-        
+
         return self._extract_results(query, messages, final_response)
 
     def _extract_results(self, query: str, messages: List[Dict[str, Any]], final_response: str = "") -> Dict[str, Any]:
@@ -233,20 +233,20 @@ class AutoGenOrchestrator:
         research_findings = []
         plan = ""
         critique = ""
-        
+
         for msg in messages:
             source = msg.get("source", "")
             content = msg.get("content", "")
-            
+
             if source == "Planner" and not plan:
                 plan = content
-            
+
             elif source == "Researcher":
                 research_findings.append(content)
-            
+
             elif source == "Critic":
                 critique = content
-        
+
         # Count sources mentioned in research
         num_sources = 0
         sources: List[str] = []
@@ -261,11 +261,11 @@ class AutoGenOrchestrator:
             for url in re.findall(r"https?://[^\s<>'\"]+", finding_text):
                 if url not in sources:
                     sources.append(url)
-        
+
         # Clean up final response
         if final_response:
             final_response = final_response.replace("TERMINATE", "").strip()
-        
+
         return {
             "query": query,
             "response": final_response,
@@ -339,34 +339,34 @@ AutoGen Research Workflow:
 def demonstrate_usage():
     """
     Demonstrate how to use the AutoGen orchestrator.
-    
+
     This function shows a simple example of using the orchestrator.
     """
     import yaml
     from dotenv import load_dotenv
-    
+
     # Load environment variables
     load_dotenv()
-    
+
     # Load configuration
     with open("config.yaml", "r") as f:
         config = yaml.safe_load(f)
-    
+
     # Create orchestrator
     orchestrator = AutoGenOrchestrator(config)
-    
+
     # Print workflow visualization
     print(orchestrator.visualize_workflow())
-    
+
     # Example query
     query = "What are the latest trends in human-computer interaction research?"
-    
+
     print(f"\nProcessing query: {query}\n")
     print("=" * 70)
-    
+
     # Process query
     result = orchestrator.process_query(query)
-    
+
     # Display results
     print("\n" + "=" * 70)
     print("RESULTS")
@@ -385,6 +385,5 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
-    
-    demonstrate_usage()
 
+    demonstrate_usage()

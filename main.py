@@ -33,7 +33,7 @@ async def run_evaluation():
     from dotenv import load_dotenv
     from src.autogen_orchestrator import AutoGenOrchestrator
     from src.evaluation.evaluator import SystemEvaluator
-    
+
     # Load environment variables
     load_dotenv()
 

@@ -58,15 +58,15 @@ def initialize_session_state():
 async def process_query(query: str) -> Dict[str, Any]:
     """
     Process a query through the orchestrator.
-    
+
     Args:
         query: Research query to process
-        
+
     Returns:
         Result dictionary with response, citations, and metadata
     """
     orchestrator = st.session_state.orchestrator
-    
+
     if orchestrator is None:
         return {
             "query": query,
@@ -75,34 +75,34 @@ async def process_query(query: str) -> Dict[str, Any]:
             "citations": [],
             "metadata": {}
         }
-    
+
     try:
         # Process query through AutoGen orchestrator
         result = orchestrator.process_query(query)
-        
+
         # Check for errors
         if "error" in result:
             return result
-        
+
         # Extract citations from conversation history
         citations = extract_citations(result)
-        
+
         # Extract agent traces for display
         agent_traces = extract_agent_traces(result)
-        
+
         # Format metadata
         metadata = result.get("metadata", {})
         metadata["agent_traces"] = agent_traces
         metadata["citations"] = citations
         metadata["critique_score"] = calculate_quality_score(result)
-        
+
         return {
             "query": query,
             "response": result.get("response", ""),
             "citations": citations,
             "metadata": metadata
         }
-        
+
     except Exception as e:
         return {
             "query": query,
@@ -116,66 +116,66 @@ async def process_query(query: str) -> Dict[str, Any]:
 def extract_citations(result: Dict[str, Any]) -> list:
     """Extract citations from research result."""
     citations = []
-    
+
     # Look through conversation history for citations
     for msg in result.get("conversation_history", []):
         content = msg.get("content", "")
-        
+
         # Find URLs in content
         import re
         urls = re.findall(r'https?://[^\s<>"{}|\\^`\[\]]+', content)
-        
+
         # Find citation patterns like [Source: Title]
         citation_patterns = re.findall(r'\[Source: ([^\]]+)\]', content)
-        
+
         for url in urls:
             if url not in citations:
                 citations.append(url)
-        
+
         for citation in citation_patterns:
             if citation not in citations:
                 citations.append(citation)
-    
+
     return citations[:10]  # Limit to top 10
 
 
 def extract_agent_traces(result: Dict[str, Any]) -> Dict[str, list]:
     """Extract agent execution traces from conversation history."""
     traces = {}
-    
+
     for msg in result.get("conversation_history", []):
         agent = msg.get("source", "Unknown")
         content = msg.get("content", "")[:200]  # First 200 chars
-        
+
         if agent not in traces:
             traces[agent] = []
-        
+
         traces[agent].append({
             "action_type": "message",
             "details": content
         })
-    
+
     return traces
 
 
 def calculate_quality_score(result: Dict[str, Any]) -> float:
     """Calculate a quality score based on various factors."""
     score = 5.0  # Base score
-    
+
     metadata = result.get("metadata", {})
-    
+
     # Add points for sources
     num_sources = metadata.get("num_sources", 0)
     score += min(num_sources * 0.5, 2.0)
-    
+
     # Add points for critique
     if metadata.get("critique"):
         score += 1.0
-    
+
     # Add points for conversation length (indicates thorough discussion)
     num_messages = metadata.get("num_messages", 0)
     score += min(num_messages * 0.1, 2.0)
-    
+
     return min(score, 10.0)  # Cap at 10
 
 

@@ -13,7 +13,7 @@ Evaluate generated outputs using LLM‑as‑a‑Judge scoring and report finding
 
 The deliverables are a technical report (3-4  page single-column and single-space write‑up) and a GitHub Classroom repo containing your code and documentation.
 
- 
+
 
 2) System Requirements
 A. Agents & Orchestration (AutoGen or LangGraph)
@@ -23,10 +23,10 @@ Recommended workflow: task planning → evidence gathering → synthesis → cri
 
 Include tool use (e.g., web search/S2 API, citation extraction, PDF parsing) where appropriate. You may mock tools if needed, but explain trade‑offs.
 
-Some helpful web search services: 
+Some helpful web search services:
 https://www.tavily.com/Links to an external site. (You can get a student free quota)
 https://brave.com/search/api/Links to an external site.
-For paper search: https://www.semanticscholar.org/product/apiLinks to an external site. 
+For paper search: https://www.semanticscholar.org/product/apiLinks to an external site.
 B. Safety & Guardrails
 Integrate at least one safety framework, e.g., GuardrailsLinks to an external site., NeMo Guardrails, or a custom policy filter.
 
@@ -72,7 +72,7 @@ Safety compliance (no unsafe content)
 Clarity & organization
 
 Report a comprehensive evaluation of your multi-agent system in your write-up
- 
+
 
 3) Report write-up structure
 Technical Report 3-4 pages, single-column and single-space
@@ -89,9 +89,9 @@ Discussion & Limitations (Summarize your insights and learnings, what are the li
 
 References (APA style, NOT counted towards page count)
 
- 
 
- 
+
+
 
 4) Grading Rubric (100 pts)
 

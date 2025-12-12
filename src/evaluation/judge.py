@@ -5,7 +5,7 @@ Uses LLMs to evaluate system outputs based on defined criteria.
 Example usage:
     # Initialize judge with config
     judge = LLMJudge(config)
-    
+
     # Evaluate a response
     result = await judge.evaluate(
         query="What is the capital of France?",
@@ -13,7 +13,7 @@ Example usage:
         sources=[],
         ground_truth="Paris"
     )
-    
+
     print(f"Overall Score: {result['overall_score']}")
     print(f"Criterion Scores: {result['criterion_scores']}")
 """
@@ -57,7 +57,7 @@ class LLMJudge:
         # Load evaluation criteria from config.yaml (evaluation.criteria)
         # Each criterion has: name, weight, description
         self.criteria = config.get("evaluation", {}).get("criteria", [])
-        
+
         # Initialize LLM clients
         self.client = None
         if self.provider == "openai":
@@ -73,9 +73,9 @@ class LLMJudge:
                 self.logger.warning("GROQ_API_KEY not found in environment")
             else:
                 self.client = Groq(api_key=api_key)
-        
+
         self.logger.info(f"LLMJudge initialized with {len(self.criteria)} criteria")
- 
+
     async def evaluate(
         self,
         query: str,
@@ -177,7 +177,7 @@ class LLMJudge:
         try:
             judgment = await self._call_judge_llm(prompt)
             score_value, reasoning = self._parse_judgment(judgment)
-            
+
             score = {
                 "score": score_value,  # 0-1 scale
                 "reasoning": reasoning,
@@ -300,7 +300,7 @@ Provide your evaluation in the following JSON format:
     def _parse_judgment(self, judgment: str) -> tuple:
         """
         Parse LLM judgment response.
-        
+
         """
         try:
             # Clean up the response - remove markdown code blocks if present
@@ -312,17 +312,17 @@ Provide your evaluation in the following JSON format:
             if judgment_clean.endswith("```"):
                 judgment_clean = judgment_clean[:-3]
             judgment_clean = judgment_clean.strip()
-            
+
             # Parse JSON
             result = json.loads(judgment_clean)
             score = float(result.get("score", 0.0))
             reasoning = result.get("reasoning", "")
-            
+
             # Validate score is in range [0, 1]
             score = max(0.0, min(1.0, score))
-            
+
             return score, reasoning
-            
+
         except json.JSONDecodeError as e:
             self.logger.error(f"JSON decode error: {e}")
             self.logger.error(f"Raw judgment: {judgment[:200]}")
@@ -336,7 +336,7 @@ Provide your evaluation in the following JSON format:
 async def example_basic_evaluation():
     """
     Example 1: Basic evaluation with LLMJudge
-    
+
     Usage:
         import asyncio
         from src.evaluation.judge import example_basic_evaluation
@@ -344,29 +344,29 @@ async def example_basic_evaluation():
     """
     import yaml
     from dotenv import load_dotenv
-    
+
     load_dotenv()
-    
+
     # Load config
     with open("config.yaml", 'r') as f:
         config = yaml.safe_load(f)
-    
+
     # Initialize judge
     judge = LLMJudge(config)
-    
+
     # Test case (similar to Lab 5)
     print("=" * 70)
     print("EXAMPLE 1: Basic Evaluation")
     print("=" * 70)
-    
+
     query = "What is the capital of France?"
     response = "Paris is the capital of France. It is known for the Eiffel Tower."
     ground_truth = "Paris"
-    
+
     print(f"\nQuery: {query}")
     print(f"Response: {response}")
     print(f"Ground Truth: {ground_truth}\n")
-    
+
     # Evaluate
     result = await judge.evaluate(
         query=query,
@@ -374,7 +374,7 @@ async def example_basic_evaluation():
         sources=[],
         ground_truth=ground_truth
     )
-    
+
     print(f"Overall Score: {result['overall_score']:.3f}\n")
     print("Criterion Scores:")
     for criterion, score_data in result['criterion_scores'].items():
@@ -386,7 +386,7 @@ async def example_basic_evaluation():
 async def example_compare_responses():
     """
     Example 2: Compare multiple responses
-    
+
     Usage:
         import asyncio
         from src.evaluation.judge import example_compare_responses
@@ -394,61 +394,61 @@ async def example_compare_responses():
     """
     import yaml
     from dotenv import load_dotenv
-    
+
     load_dotenv()
-    
+
     # Load config
     with open("config.yaml", 'r') as f:
         config = yaml.safe_load(f)
-    
+
     # Initialize judge
     judge = LLMJudge(config)
-    
+
     print("=" * 70)
     print("EXAMPLE 2: Compare Multiple Responses")
     print("=" * 70)
-    
+
     query = "What causes climate change?"
     ground_truth = "Climate change is primarily caused by increased greenhouse gas emissions from human activities, including burning fossil fuels, deforestation, and industrial processes."
-    
+
     responses = [
         "Climate change is primarily caused by greenhouse gas emissions from human activities.",
         "The weather changes because of natural cycles and the sun's activity.",
         "Climate change is a complex phenomenon involving multiple factors including CO2 emissions, deforestation, and industrial processes."
     ]
-    
+
     print(f"\nQuery: {query}\n")
     print(f"Ground Truth: {ground_truth}\n")
-    
+
     results = []
     for i, response in enumerate(responses, 1):
         print(f"\n{'='*70}")
         print(f"Response {i}:")
         print(f"{response}")
         print(f"{'='*70}")
-        
+
         result = await judge.evaluate(
             query=query,
             response=response,
             sources=[],
             ground_truth=ground_truth
         )
-        
+
         results.append(result)
-        
+
         print(f"\nOverall Score: {result['overall_score']:.3f}")
         print("\nCriterion Scores:")
         for criterion, score_data in result['criterion_scores'].items():
             print(f"  {criterion}: {score_data['score']:.3f}")
         print()
-    
+
     # Summary
     print("\n" + "=" * 70)
     print("SUMMARY")
     print("=" * 70)
     for i, result in enumerate(results, 1):
         print(f"Response {i}: {result['overall_score']:.3f}")
-    
+
     best_idx = max(range(len(results)), key=lambda i: results[i]['overall_score'])
     print(f"\nBest Response: Response {best_idx + 1}")
 
@@ -456,13 +456,13 @@ async def example_compare_responses():
 # For direct execution
 if __name__ == "__main__":
     import asyncio
-    
+
     print("Running LLMJudge Examples\n")
-    
+
     # Run example 1
     asyncio.run(example_basic_evaluation())
-    
+
     print("\n\n")
-    
+
     # Run example 2
     asyncio.run(example_compare_responses())

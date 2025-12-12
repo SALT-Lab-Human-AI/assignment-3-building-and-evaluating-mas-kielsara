@@ -117,18 +117,18 @@ class CLI:
                 print("\n" + "=" * 70)
                 print("Processing your query...")
                 print("=" * 70)
-                
+
                 try:
                     # Process through orchestrator (synchronous call, not async)
                     result = self.orchestrator.process_query(query)
                     self.query_count += 1
-                    
+
                     # Display result
                     self._display_result(result)
-                    
+
                     # Save result to outputs folder
                     self._save_query_result(query, result)
-                    
+
                 except Exception as e:
                     print(f"\nError processing query: {e}")
                     logging.exception("Error processing query")
@@ -229,26 +229,26 @@ class CLI:
             self._display_conversation_summary(result.get("conversation_history", []))
 
         print("=" * 70 + "\n")
-    
+
     def _extract_citations(self, result: Dict[str, Any]) -> list:
         """Extract citations/URLs from conversation history."""
         citations = []
-        
+
         for msg in result.get("conversation_history", []):
             content = msg.get("content", "")
-            
+
             # Handle both string and non-string content
             if not isinstance(content, str):
                 content = str(content)
-            
+
             # Find URLs in content
             import re
             urls = re.findall(r'https?://[^\s<>"{}|\\^`\[\]]+', content)
-            
+
             for url in urls:
                 if url not in citations:
                     citations.append(url)
-        
+
         return citations[:10]  # Limit to top 10
 
     def _save_query_result(self, query: str, result: Dict[str, Any]):
@@ -257,15 +257,15 @@ class CLI:
             # Create outputs directory if it doesn't exist
             outputs_dir = Path(project_root) / "outputs"
             outputs_dir.mkdir(exist_ok=True)
-            
+
             # Generate timestamp-based filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"query_{timestamp}.json"
             filepath = outputs_dir / filename
-            
+
             # Extract citations
             citations = self._extract_citations(result)
-            
+
             # Prepare output data
             output_data = {
                 "timestamp": datetime.now().isoformat(),
@@ -275,13 +275,13 @@ class CLI:
                 "citations": citations,
                 "conversation_history": result.get("conversation_history", [])
             }
-            
+
             # Save to file
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(output_data, f, indent=2, ensure_ascii=False)
-            
+
             print(f"\n💾 Result saved to: {filepath.relative_to(project_root)}")
-            
+
         except Exception as e:
             logging.warning(f"Failed to save query result: {e}")
 
@@ -294,19 +294,19 @@ class CLI:
         """Display a summary of the agent conversation."""
         if not conversation_history:
             return
-            
+
         print("\n" + "-" * 70)
         print("🔍 CONVERSATION SUMMARY")
         print("-" * 70)
-        
+
         for i, msg in enumerate(conversation_history, 1):
             agent = msg.get("source", "Unknown")
             content = msg.get("content", "")
-            
+
             # Truncate long content
             preview = content[:150] + "..." if len(content) > 150 else content
             preview = preview.replace("\n", " ")
-            
+
             print(f"\n{i}. {agent}:")
             print(f"   {preview}")
 

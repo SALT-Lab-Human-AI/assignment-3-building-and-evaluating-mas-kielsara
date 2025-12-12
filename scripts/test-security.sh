@@ -60,4 +60,3 @@ echo "Test complete!"
 echo ""
 echo "💡 To install hooks: ./scripts/install-hooks.sh"
 echo "📖 Full docs: SECURITY_SETUP.md"
-
