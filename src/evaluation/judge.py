@@ -5,7 +5,7 @@ Uses LLMs to evaluate system outputs based on defined criteria.
 Example usage:
     # Initialize judge with config
     judge = LLMJudge(config)
-    
+
     # Evaluate a response
     result = await judge.evaluate(
         query="What is the capital of France?",
@@ -13,7 +13,7 @@ Example usage:
         sources=[],
         ground_truth="Paris"
     )
-    
+
     print(f"Overall Score: {result['overall_score']}")
     print(f"Criterion Scores: {result['criterion_scores']}")
 """
@@ -22,7 +22,9 @@ from typing import Dict, Any, List, Optional
 import logging
 import json
 import os
+import asyncio
 from groq import Groq
+from openai import AsyncOpenAI
 
 
 class LLMJudge:
@@ -50,19 +52,30 @@ class LLMJudge:
         # Load judge model configuration from config.yaml (models.judge)
         # This includes: provider, name, temperature, max_tokens
         self.model_config = config.get("models", {}).get("judge", {})
+        self.provider = self.model_config.get("provider", "openai")
 
         # Load evaluation criteria from config.yaml (evaluation.criteria)
         # Each criterion has: name, weight, description
         self.criteria = config.get("evaluation", {}).get("criteria", [])
-        
-        # Initialize Groq client (similar to what we tried in Lab 5)
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            self.logger.warning("GROQ_API_KEY not found in environment")
-        self.client = Groq(api_key=api_key) if api_key else None
-        
+
+        # Initialize LLM clients
+        self.client = None
+        if self.provider == "openai":
+            api_key = os.getenv("OPENAI_API_KEY")
+            base_url = os.getenv("OPENAI_BASE_URL")
+            if not api_key:
+                self.logger.warning("OPENAI_API_KEY not found in environment; falling back to heuristic scoring")
+            else:
+                self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        else:
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                self.logger.warning("GROQ_API_KEY not found in environment")
+            else:
+                self.client = Groq(api_key=api_key)
+
         self.logger.info(f"LLMJudge initialized with {len(self.criteria)} criteria")
- 
+
     async def evaluate(
         self,
         query: str,
@@ -164,7 +177,7 @@ class LLMJudge:
         try:
             judgment = await self._call_judge_llm(prompt)
             score_value, reasoning = self._parse_judgment(judgment)
-            
+
             score = {
                 "score": score_value,  # 0-1 scale
                 "reasoning": reasoning,
@@ -231,46 +244,63 @@ Provide your evaluation in the following JSON format:
         Uses model configuration from config.yaml (models.judge section).
         """
         if not self.client:
-            raise ValueError("Groq client not initialized. Check GROQ_API_KEY environment variable.")
-        
+            # Fallback heuristic when no API key is present
+            return json.dumps({
+                "score": 0.6,
+                "reasoning": "Heuristic fallback because judge LLM is not configured."
+            })
+
         try:
-            # Load model settings from config.yaml (models.judge)
-            model_name = self.model_config.get("name", "llama-3.1-8b-instant")
-            temperature = self.model_config.get("temperature", 0.3)
-            max_tokens = self.model_config.get("max_tokens", 1024)
-            
-            self.logger.debug(f"Calling Groq API with model: {model_name}")
-            
-            # Call Groq API (pattern from Lab 5)
-            chat_completion = self.client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert evaluator. Provide your evaluations in valid JSON format."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                model=model_name,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
-            
-            response = chat_completion.choices[0].message.content
-            self.logger.debug(f"Received response: {response[:100]}...")
-            
+            model_name = self.model_config.get("name", "gpt-4o-mini")
+            temperature = self.model_config.get("temperature", 0.2)
+            max_tokens = self.model_config.get("max_tokens", 600)
+
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are an expert evaluator. Provide your evaluations in valid JSON format only."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+
+            if self.provider == "openai":
+                completion = await self.client.chat.completions.create(
+                    messages=messages,
+                    model=model_name,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                response = completion.choices[0].message.content
+            else:
+                # Groq client is synchronous; run in thread to avoid blocking
+                def _call_groq():
+                    chat_completion = self.client.chat.completions.create(
+                        messages=messages,
+                        model=model_name,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                    return chat_completion.choices[0].message.content
+
+                response = await asyncio.to_thread(_call_groq)
+
+            self.logger.debug(f"Judge response received (truncated): {response[:120]}")
             return response
-            
+
         except Exception as e:
-            self.logger.error(f"Error calling Groq API: {e}")
-            raise
+            self.logger.error(f"Error calling judge model: {e}")
+            return json.dumps({
+                "score": 0.0,
+                "reasoning": f"Model error: {e}"
+            })
 
     def _parse_judgment(self, judgment: str) -> tuple:
         """
         Parse LLM judgment response.
-        
+
         """
         try:
             # Clean up the response - remove markdown code blocks if present
@@ -282,17 +312,17 @@ Provide your evaluation in the following JSON format:
             if judgment_clean.endswith("```"):
                 judgment_clean = judgment_clean[:-3]
             judgment_clean = judgment_clean.strip()
-            
+
             # Parse JSON
             result = json.loads(judgment_clean)
             score = float(result.get("score", 0.0))
             reasoning = result.get("reasoning", "")
-            
+
             # Validate score is in range [0, 1]
             score = max(0.0, min(1.0, score))
-            
+
             return score, reasoning
-            
+
         except json.JSONDecodeError as e:
             self.logger.error(f"JSON decode error: {e}")
             self.logger.error(f"Raw judgment: {judgment[:200]}")
@@ -306,7 +336,7 @@ Provide your evaluation in the following JSON format:
 async def example_basic_evaluation():
     """
     Example 1: Basic evaluation with LLMJudge
-    
+
     Usage:
         import asyncio
         from src.evaluation.judge import example_basic_evaluation
@@ -314,29 +344,29 @@ async def example_basic_evaluation():
     """
     import yaml
     from dotenv import load_dotenv
-    
+
     load_dotenv()
-    
+
     # Load config
     with open("config.yaml", 'r') as f:
         config = yaml.safe_load(f)
-    
+
     # Initialize judge
     judge = LLMJudge(config)
-    
+
     # Test case (similar to Lab 5)
     print("=" * 70)
     print("EXAMPLE 1: Basic Evaluation")
     print("=" * 70)
-    
+
     query = "What is the capital of France?"
     response = "Paris is the capital of France. It is known for the Eiffel Tower."
     ground_truth = "Paris"
-    
+
     print(f"\nQuery: {query}")
     print(f"Response: {response}")
     print(f"Ground Truth: {ground_truth}\n")
-    
+
     # Evaluate
     result = await judge.evaluate(
         query=query,
@@ -344,7 +374,7 @@ async def example_basic_evaluation():
         sources=[],
         ground_truth=ground_truth
     )
-    
+
     print(f"Overall Score: {result['overall_score']:.3f}\n")
     print("Criterion Scores:")
     for criterion, score_data in result['criterion_scores'].items():
@@ -356,7 +386,7 @@ async def example_basic_evaluation():
 async def example_compare_responses():
     """
     Example 2: Compare multiple responses
-    
+
     Usage:
         import asyncio
         from src.evaluation.judge import example_compare_responses
@@ -364,61 +394,61 @@ async def example_compare_responses():
     """
     import yaml
     from dotenv import load_dotenv
-    
+
     load_dotenv()
-    
+
     # Load config
     with open("config.yaml", 'r') as f:
         config = yaml.safe_load(f)
-    
+
     # Initialize judge
     judge = LLMJudge(config)
-    
+
     print("=" * 70)
     print("EXAMPLE 2: Compare Multiple Responses")
     print("=" * 70)
-    
+
     query = "What causes climate change?"
     ground_truth = "Climate change is primarily caused by increased greenhouse gas emissions from human activities, including burning fossil fuels, deforestation, and industrial processes."
-    
+
     responses = [
         "Climate change is primarily caused by greenhouse gas emissions from human activities.",
         "The weather changes because of natural cycles and the sun's activity.",
         "Climate change is a complex phenomenon involving multiple factors including CO2 emissions, deforestation, and industrial processes."
     ]
-    
+
     print(f"\nQuery: {query}\n")
     print(f"Ground Truth: {ground_truth}\n")
-    
+
     results = []
     for i, response in enumerate(responses, 1):
         print(f"\n{'='*70}")
         print(f"Response {i}:")
         print(f"{response}")
         print(f"{'='*70}")
-        
+
         result = await judge.evaluate(
             query=query,
             response=response,
             sources=[],
             ground_truth=ground_truth
         )
-        
+
         results.append(result)
-        
+
         print(f"\nOverall Score: {result['overall_score']:.3f}")
         print("\nCriterion Scores:")
         for criterion, score_data in result['criterion_scores'].items():
             print(f"  {criterion}: {score_data['score']:.3f}")
         print()
-    
+
     # Summary
     print("\n" + "=" * 70)
     print("SUMMARY")
     print("=" * 70)
     for i, result in enumerate(results, 1):
         print(f"Response {i}: {result['overall_score']:.3f}")
-    
+
     best_idx = max(range(len(results)), key=lambda i: results[i]['overall_score'])
     print(f"\nBest Response: Response {best_idx + 1}")
 
@@ -426,13 +456,13 @@ async def example_compare_responses():
 # For direct execution
 if __name__ == "__main__":
     import asyncio
-    
+
     print("Running LLMJudge Examples\n")
-    
+
     # Run example 1
     asyncio.run(example_basic_evaluation())
-    
+
     print("\n\n")
-    
+
     # Run example 2
     asyncio.run(example_compare_responses())

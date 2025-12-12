@@ -18,12 +18,13 @@ from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_agentchat.messages import TextMessage
 
 from src.agents.autogen_agents import create_research_team
+from src.guardrails.safety_manager import SafetyManager
 
 
 class AutoGenOrchestrator:
     """
     Orchestrates multi-agent research using AutoGen's RoundRobinGroupChat.
-    
+
     This orchestrator manages a team of specialized agents that work together
     to answer research queries. It uses AutoGen's built-in conversation
     management and tool execution capabilities.
@@ -38,15 +39,16 @@ class AutoGenOrchestrator:
         """
         self.config = config
         self.logger = logging.getLogger("autogen_orchestrator")
-        
-        # Create the research team
-        self.logger.info("Creating research team...")
-        self.team = create_research_team(config)
-        
-        self.logger.info("Research team created successfully")
-        
+
         # Workflow trace for debugging and UI display
         self.workflow_trace: List[Dict[str, Any]] = []
+
+        # Safety manager
+        self.safety_manager = SafetyManager({
+            **config.get("safety", {}),
+            "logging": config.get("logging", {}),
+            "system": config.get("system", {}),
+        })
 
     def process_query(self, query: str, max_rounds: int = 20) -> Dict[str, Any]:
         """
@@ -64,24 +66,66 @@ class AutoGenOrchestrator:
             - metadata: Additional information about the process
         """
         self.logger.info(f"Processing query: {query}")
-        
+
         try:
+            # Input safety check
+            safety_events: List[Dict[str, Any]] = []
+            input_check = self.safety_manager.check_input_safety(query)
+            if not input_check.get("safe", True):
+                safety_events.append({
+                    "type": "input",
+                    "safe": False,
+                    "violations": input_check.get("violations", []),
+                })
+                message = input_check.get("message") or "Query blocked by safety policy."
+                return {
+                    "query": query,
+                    "response": message,
+                    "conversation_history": [],
+                    "metadata": {
+                        "error": True,
+                        "safety_events": safety_events,
+                    },
+                }
+
+            sanitized_query = input_check.get("sanitized", query)
+
+            # Create a fresh team for this query to avoid event loop conflicts
+            self.logger.info("Creating research team for this query...")
+            team = create_research_team(self.config)
+
             # Run the async query processing
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If we're already in an async context, create a new loop
+            # Check if we're already in an event loop
+            try:
+                asyncio.get_running_loop()
+                # If we get here, there's a running loop - use thread pool
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as pool:
                     result = pool.submit(
-                        asyncio.run, 
-                        self._process_query_async(query, max_rounds)
+                        asyncio.run,
+                        self._process_query_async(sanitized_query, max_rounds, team)
                     ).result()
-            else:
-                result = loop.run_until_complete(self._process_query_async(query, max_rounds))
-            
+            except RuntimeError:
+                # No running loop, we can use asyncio.run directly
+                result = asyncio.run(self._process_query_async(sanitized_query, max_rounds, team))
+
+            # Output safety check
+            output_check = self.safety_manager.check_output_safety(result.get("response", ""), result.get("metadata", {}).get("sources", []))
+            if not output_check.get("safe", True):
+                safety_events.append({
+                    "type": "output",
+                    "safe": False,
+                    "violations": output_check.get("violations", []),
+                })
+            result["response"] = output_check.get("response", result.get("response", ""))
+            # Merge safety events
+            metadata = result.get("metadata", {})
+            metadata["safety_events"] = metadata.get("safety_events", []) + safety_events
+            result["metadata"] = metadata
+
             self.logger.info("Query processing complete")
             return result
-            
+
         except Exception as e:
             self.logger.error(f"Error processing query: {e}", exc_info=True)
             return {
@@ -91,52 +135,91 @@ class AutoGenOrchestrator:
                 "conversation_history": [],
                 "metadata": {"error": True}
             }
-    
-    async def _process_query_async(self, query: str, max_rounds: int = 20) -> Dict[str, Any]:
+
+    async def _process_query_async(self, query: str, max_rounds: int, team) -> Dict[str, Any]:
         """
         Async implementation of query processing.
-        
+
         Args:
             query: The research question to answer
             max_rounds: Maximum number of conversation rounds
-            
+            team: The AutoGen team to use for this query
+
         Returns:
             Dictionary containing results
         """
-        # Create task message
+        topic = self.config.get("system", {}).get("topic", "HCI research")
+
         task_message = f"""Research Query: {query}
 
-Please work together to answer this query comprehensively:
-1. Planner: Create a research plan
-2. Researcher: Gather evidence from web and academic sources
-3. Writer: Synthesize findings into a well-cited response
-4. Critic: Evaluate the quality and provide feedback"""
-        
+    Topic Focus: {topic}
+    Please keep answers concise to conserve tokens and cite sources clearly.
+
+    Workflow:
+    1. Planner: Create a research plan and finish with PLAN COMPLETE
+    2. Researcher: Gather evidence from web and academic sources (use the tools) and finish with RESEARCH COMPLETE
+    3. Writer: Synthesize findings into a well-cited response, end with DRAFT COMPLETE
+    4. Critic: Evaluate the quality and approve or request revision"""
+
         # Run the team
-        result = await self.team.run(task=task_message)
-        
+        self.logger.info("Starting team.run()...")
+        result = await team.run(task=task_message)
+        self.logger.info(f"team.run() completed. Result type: {type(result)}")
+
         # Extract conversation history
         messages = []
-        async for message in result.messages:
-            msg_dict = {
-                "source": message.source,
-                "content": message.content if hasattr(message, 'content') else str(message),
-            }
-            messages.append(msg_dict)
-        
-        # Extract final response
+        # AutoGen's TaskResult has a messages property that we need to consume
+        if hasattr(result, "messages"):
+            self.logger.info("Extracting messages from result...")
+            # Check if it's an async iterator
+            if hasattr(result.messages, "__aiter__"):
+                async for message in result.messages:
+                    content = getattr(message, "content", str(message))
+                    # Ensure content is JSON-serializable
+                    if not isinstance(content, str):
+                        content = str(content)
+                    msg_dict = {
+                        "source": getattr(message, "source", "unknown"),
+                        "content": content,
+                    }
+                    messages.append(msg_dict)
+                    self.logger.debug(f"Message from {msg_dict['source']}: {msg_dict['content'][:100]}...")
+            # Or a regular list
+            elif isinstance(result.messages, list):
+                for message in result.messages:
+                    content = getattr(message, "content", str(message))
+                    # Ensure content is JSON-serializable
+                    if not isinstance(content, str):
+                        content = str(content)
+                    msg_dict = {
+                        "source": getattr(message, "source", "unknown"),
+                        "content": content,
+                    }
+                    messages.append(msg_dict)
+                    self.logger.debug(f"Message from {msg_dict['source']}: {msg_dict['content'][:100]}...")
+            else:
+                self.logger.warning(f"Unexpected messages type: {type(result.messages)}")
+
+        self.logger.info(f"Extracted {len(messages)} messages")
+
+        # Extract final response - specifically look for Writer's substantive content
         final_response = ""
         if messages:
-            # Get the last message from Writer or Critic
+            # Find the Writer's last substantive message (not just "DRAFT COMPLETE")
             for msg in reversed(messages):
-                if msg.get("source") in ["Writer", "Critic"]:
-                    final_response = msg.get("content", "")
-                    break
-        
-        # If no response found, use the last message
+                if msg.get("source") == "Writer":
+                    content = msg.get("content", "")
+                    # Skip coordination-only messages
+                    if content and len(content) > 50 and not content.strip() in ["DRAFT COMPLETE", "APPROVED - RESEARCH COMPLETE"]:
+                        final_response = content
+                        self.logger.info(f"Found Writer response: {len(content)} chars")
+                        break
+
+        # If no Writer response found, use the last message
         if not final_response and messages:
+            self.logger.warning("No substantive Writer response found, using last message")
             final_response = messages[-1].get("content", "")
-        
+
         return self._extract_results(query, messages, final_response)
 
     def _extract_results(self, query: str, messages: List[Dict[str, Any]], final_response: str = "") -> Dict[str, Any]:
@@ -155,41 +238,52 @@ Please work together to answer this query comprehensively:
         research_findings = []
         plan = ""
         critique = ""
-        
+
         for msg in messages:
             source = msg.get("source", "")
             content = msg.get("content", "")
-            
+
             if source == "Planner" and not plan:
                 plan = content
-            
+
             elif source == "Researcher":
                 research_findings.append(content)
-            
+
             elif source == "Critic":
                 critique = content
-        
+
         # Count sources mentioned in research
         num_sources = 0
+        sources: List[str] = []
+        import re
         for finding in research_findings:
+            # Handle both string and list content
+            finding_text = finding if isinstance(finding, str) else str(finding)
             # Rough count of sources based on numbered results
-            num_sources += finding.count("\n1.") + finding.count("\n2.") + finding.count("\n3.")
-        
+            num_sources += finding_text.count("\n1.") + finding_text.count("\n2.") + finding_text.count("\n3.")
+
+            # Extract URLs to share with UI/evaluator
+            for url in re.findall(r"https?://[^\s<>'\"]+", finding_text):
+                if url not in sources:
+                    sources.append(url)
+
         # Clean up final response
         if final_response:
             final_response = final_response.replace("TERMINATE", "").strip()
-        
+
         return {
             "query": query,
             "response": final_response,
             "conversation_history": messages,
             "metadata": {
                 "num_messages": len(messages),
-                "num_sources": max(num_sources, 1),  # At least 1
+                "num_sources": len(sources),
                 "plan": plan,
                 "research_findings": research_findings,
                 "critique": critique,
                 "agents_involved": list(set([msg.get("source", "") for msg in messages])),
+                "safety_events": [],
+                "sources": [{"url": s} for s in sources],
             }
         }
 
@@ -250,34 +344,34 @@ AutoGen Research Workflow:
 def demonstrate_usage():
     """
     Demonstrate how to use the AutoGen orchestrator.
-    
+
     This function shows a simple example of using the orchestrator.
     """
     import yaml
     from dotenv import load_dotenv
-    
+
     # Load environment variables
     load_dotenv()
-    
+
     # Load configuration
     with open("config.yaml", "r") as f:
         config = yaml.safe_load(f)
-    
+
     # Create orchestrator
     orchestrator = AutoGenOrchestrator(config)
-    
+
     # Print workflow visualization
     print(orchestrator.visualize_workflow())
-    
+
     # Example query
     query = "What are the latest trends in human-computer interaction research?"
-    
+
     print(f"\nProcessing query: {query}\n")
     print("=" * 70)
-    
+
     # Process query
     result = orchestrator.process_query(query)
-    
+
     # Display results
     print("\n" + "=" * 70)
     print("RESULTS")
@@ -296,6 +390,5 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
-    
-    demonstrate_usage()
 
+    demonstrate_usage()

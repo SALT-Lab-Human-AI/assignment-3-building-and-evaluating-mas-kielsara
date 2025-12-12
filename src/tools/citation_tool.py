@@ -14,7 +14,7 @@ import re
 class CitationTool:
     """
     Tool for formatting and managing citations.
-    
+
     Features:
     - APA style formatting (7th edition)
     - Citation tracking and deduplication
@@ -63,16 +63,16 @@ class CitationTool:
     def _format_apa(self, source: Dict[str, Any], source_type: str) -> str:
         """
         Format citation in APA style (7th edition).
-        
+
         Supports:
         - Academic papers/articles
         - Webpages
         - Generic sources
-        
+
         Args:
             source: Source information dictionary
             source_type: Type of source ("article", "paper", "webpage", etc.)
-            
+
         Returns:
             APA-formatted citation string
         """
@@ -124,11 +124,11 @@ class CitationTool:
     def _format_mla(self, source: Dict[str, Any], source_type: str) -> str:
         """
         Format citation in MLA style (9th edition).
-        
+
         Args:
             source: Source information dictionary
             source_type: Type of source
-            
+
         Returns:
             MLA-formatted citation string
         """
@@ -138,23 +138,23 @@ class CitationTool:
             year = source.get("year", "n.d.")
             title = source.get("title", "Untitled")
             venue = source.get("venue", "")
-            
+
             # Format authors for MLA (First Last, and Second Last)
             author_str = self._format_authors_mla(authors)
-            
+
             # MLA format: Author(s). "Article Title." Journal Name, Year.
             citation = f'{author_str}. "{title}."'
             if venue:
                 citation += f" {venue},"
             citation += f" {year}."
-            
+
             # Add URL if available
             url = source.get("url")
             if url:
                 citation += f" {url}."
-            
+
             return citation
-            
+
         elif source_type == "webpage":
             # Web page
             authors = source.get("authors", [])
@@ -162,9 +162,9 @@ class CitationTool:
             site_name = source.get("site_name", "")
             year = source.get("year", "n.d.")
             url = source.get("url", "")
-            
+
             author_str = self._format_authors_mla(authors) if authors else site_name
-            
+
             # MLA format for webpage
             citation = f'{author_str}. "{title}."'
             if site_name:
@@ -172,82 +172,82 @@ class CitationTool:
             citation += f" {year}."
             if url:
                 citation += f" {url}."
-            
+
             return citation
-            
+
         else:
             # Generic fallback
             return f'{source.get("title", "Unknown")}. {source.get("year", "n.d.")}.'
-    
+
     def _format_authors_mla(self, authors: List[Dict[str, Any]]) -> str:
         """
         Format author list in MLA style.
-        
+
         MLA format:
         - 1 author: Last, First
         - 2 authors: Last1, First1, and Last2, First2
         - 3+ authors: Last1, First1, et al.
-        
+
         Args:
             authors: List of author dictionaries with "name" key
-            
+
         Returns:
             MLA-formatted author string
         """
         if not authors:
             return "Unknown Author"
-        
+
         if len(authors) == 1:
             name = authors[0].get("name", "Unknown")
             return self._format_single_author_mla(name)
-        
+
         elif len(authors) == 2:
             name1 = self._format_single_author_mla(authors[0].get("name", "Unknown"))
             name2 = self._format_single_author_mla(authors[1].get("name", "Unknown"))
             return f"{name1}, and {name2}"
-        
+
         else:
             # 3+ authors - use et al.
             first_author = self._format_single_author_mla(authors[0].get("name", "Unknown"))
             return f"{first_author}, et al."
-    
+
     def _format_single_author_mla(self, name: str) -> str:
         """
         Format a single author name in MLA style (Last, First).
-        
+
         Args:
             name: Author's full name
-            
+
         Returns:
             MLA-formatted name (Last, First)
         """
         if not name or name == "Unknown":
             return "Unknown"
-        
+
         # If already in Last, First format, return as is
         if ',' in name:
             return name
-        
+
         # Split name into parts
         parts = name.strip().split()
         if len(parts) == 1:
             return parts[0]
-        
+
         # Assume last part is surname, rest are given names
         surname = parts[-1]
         given_names = " ".join(parts[:-1])
-        
+
         return f"{surname}, {given_names}"
 
     def _format_authors_apa(self, authors: List[Dict[str, Any]]) -> str:
         """
         Format author list in APA style.
-        
+
         APA 7th edition:
         - 1-2 authors: List all
         - 3-20 authors: List all
         - 21+ authors: First 19, then ..., then last
-        
+
         For simplicity, we use "et al." for 3+ authors
         """
         if not authors:
@@ -266,38 +266,38 @@ class CitationTool:
             # More than 2 authors - use et al. for brevity
             first_author = self._format_single_author(authors[0].get("name", "Unknown"))
             return f"{first_author}, et al."
-    
+
     def _format_single_author(self, name: str) -> str:
         """
         Format a single author name in APA style (Last, F. M.)
-        
+
         Handles various name formats and extracts last name and initials.
         """
         if not name or name == "Unknown":
             return "Unknown"
-        
+
         # If already in Last, F. format, return as is
         if ',' in name:
             return name
-        
+
         # Split name into parts
         parts = name.strip().split()
         if len(parts) == 1:
             return parts[0]
-        
+
         # Assume last part is surname, rest are given names
         surname = parts[-1]
         given_names = parts[:-1]
-        
+
         # Create initials from given names
         initials = ". ".join([n[0].upper() for n in given_names if n]) + "."
-        
+
         return f"{surname}, {initials}"
 
     def add_citation(self, source: Dict[str, Any]) -> int:
         """
         Add a source to the citation list with deduplication.
-        
+
         Checks if a source with the same title already exists to avoid duplicates.
 
         Args:
@@ -326,7 +326,7 @@ class CitationTool:
     def generate_bibliography(self) -> List[str]:
         """
         Generate formatted bibliography from all citations.
-        
+
         Citations are formatted according to the selected style and sorted
         alphabetically by the first author's last name (APA/MLA standard).
 

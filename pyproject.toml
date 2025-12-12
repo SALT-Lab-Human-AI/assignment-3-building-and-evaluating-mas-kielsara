@@ -23,4 +23,3 @@ extend-exclude = '''
   | dist
 )/
 '''
-

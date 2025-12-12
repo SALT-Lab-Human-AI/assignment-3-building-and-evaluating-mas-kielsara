@@ -1,3 +1,4 @@
+[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/r1tAQ0HC)
 # Multi-Agent Research System - Assignment 3
 
 A multi-agent system for deep research on HCI topics, featuring orchestrated agents, safety guardrails, and LLM-as-a-Judge evaluation.
@@ -10,6 +11,11 @@ This template provides a starting point for building a multi-agent research assi
 - Synthesize findings into coherent responses
 - Evaluate quality and verify accuracy
 - Ensure safety through guardrails
+
+Current defaults for this assignment:
+- **Topic**: UX research on AI-assisted design and evaluation
+- **Models**: Small OpenAI model (`gpt-4o-mini`) for both agents and judge to conserve the shared quota
+- **Guardrails**: Lightweight input/output safety checks with logging to `logs/safety_events.log`
 
 ## Project Structure
 
@@ -60,9 +66,6 @@ This template provides a starting point for building a multi-agent research assi
 #### Installing uv (Recommended)
 
 `uv` is a fast Python package installer and resolver. Install it first:
-
-```bash
-# On macOS/Linux
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # On Windows
@@ -73,19 +76,14 @@ pip install uv
 ```
 
 #### Setting up the Project
-
 Clone the repository and navigate to the project directory:
 
 ```bash
-cd is-492-assignment-3
-```
 
 **Option A: Using uv (Recommended - Much Faster)**
-
 ```bash
 # Create virtual environment and install dependencies
 uv venv
-source .venv/bin/activate  # On macOS/Linux
 # OR
 .venv\Scripts\activate     # On Windows
 
@@ -93,10 +91,6 @@ source .venv/bin/activate  # On macOS/Linux
 uv pip install -r requirements.txt
 ```
 
-**Option B: Using standard pip**
-
-```bash
-# Create virtual environment
 python -m venv venv
 source venv/bin/activate   # On macOS/Linux
 # OR

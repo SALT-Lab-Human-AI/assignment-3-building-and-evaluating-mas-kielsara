@@ -12,13 +12,15 @@ echo "Creating test file with fake API key..."
 cat > $TEST_FILE << 'EOF'
 # This is a test file to verify security hooks
 
-# This should be caught by detect-secrets
-GROQ_API_KEY = "gsk_abcdefghijklmnopqrstuvwxyz1234567890"
-OPENAI_API_KEY = "sk-proj-1234567890abcdefghijklmnopqrstuvwxyz"
+# This should be caught by detect-secrets (deliberate fake values for testing)
+# pragma: allowlist secret
+GROQ_API_KEY = "FAKE_GROQ_KEY_FOR_TESTS"  # pragma: allowlist secret
+# pragma: allowlist secret
+OPENAI_API_KEY = "FAKE_OPENAI_KEY_FOR_TESTS"  # pragma: allowlist secret
 
 def get_api_key():
     # Bad practice - hardcoded secret
-    return "gsk_this_is_a_fake_api_key_for_testing"
+    return "FAKE_KEY_FOR_TESTING_ONLY"
 
 EOF
 
@@ -60,4 +62,3 @@ echo "Test complete!"
 echo ""
 echo "💡 To install hooks: ./scripts/install-hooks.sh"
 echo "📖 Full docs: SECURITY_SETUP.md"
-

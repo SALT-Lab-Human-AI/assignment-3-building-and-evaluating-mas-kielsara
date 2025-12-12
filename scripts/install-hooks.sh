@@ -49,4 +49,3 @@ echo ""
 echo "⚠️  Note: Hooks can be bypassed with 'git commit --no-verify'"
 echo "   However, CI/CD checks will catch any bypassed commits!"
 echo ""
-

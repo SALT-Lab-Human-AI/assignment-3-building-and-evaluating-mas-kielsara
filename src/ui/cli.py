@@ -14,6 +14,9 @@ import asyncio
 from typing import Dict, Any
 import yaml
 import logging
+import json
+import os
+from datetime import datetime
 from dotenv import load_dotenv
 
 from src.autogen_orchestrator import AutoGenOrchestrator
@@ -114,15 +117,18 @@ class CLI:
                 print("\n" + "=" * 70)
                 print("Processing your query...")
                 print("=" * 70)
-                
+
                 try:
                     # Process through orchestrator (synchronous call, not async)
                     result = self.orchestrator.process_query(query)
                     self.query_count += 1
-                    
+
                     # Display result
                     self._display_result(result)
-                    
+
+                    # Save result to outputs folder
+                    self._save_query_result(query, result)
+
                 except Exception as e:
                     print(f"\nError processing query: {e}")
                     logging.exception("Error processing query")
@@ -160,8 +166,14 @@ class CLI:
 
     def _clear_screen(self):
         """Clear the terminal screen."""
-        import os
-        os.system('clear' if os.name == 'posix' else 'cls')
+        import shutil
+        import subprocess  # nosec B404
+
+        # Use subprocess with explicit path; avoid shell=True
+        clear_cmd = "clear" if os.name == "posix" else "cls"
+        cmd_path = shutil.which(clear_cmd)
+        if cmd_path:
+            subprocess.run([cmd_path], check=False)  # nosec B603
 
     def _print_stats(self):
         """Print system statistics."""
@@ -205,28 +217,79 @@ class CLI:
             print(f"  • Sources gathered: {metadata.get('num_sources', 0)}")
             print(f"  • Agents involved: {', '.join(metadata.get('agents_involved', []))}")
 
+        safety_events = metadata.get("safety_events", []) if metadata else []
+        if safety_events:
+            print("\n" + "-" * 70)
+            print("🛡️  SAFETY")
+            print("-" * 70)
+            for event in safety_events:
+                status = "SAFE" if event.get("safe", True) else "BLOCKED"
+                print(f"  • {event.get('type', 'unknown').upper()}: {status}")
+                for violation in event.get("violations", []):
+                    reason = violation.get("reason") or violation.get("validator") or "Unknown"
+                    severity = violation.get("severity", "")
+                    print(f"     - {reason} ({severity})")
+
         # Display conversation summary if verbose mode
         if self._should_show_traces():
             self._display_conversation_summary(result.get("conversation_history", []))
 
         print("=" * 70 + "\n")
-    
+
     def _extract_citations(self, result: Dict[str, Any]) -> list:
         """Extract citations/URLs from conversation history."""
         citations = []
-        
+
         for msg in result.get("conversation_history", []):
             content = msg.get("content", "")
-            
+
+            # Handle both string and non-string content
+            if not isinstance(content, str):
+                content = str(content)
+
             # Find URLs in content
             import re
             urls = re.findall(r'https?://[^\s<>"{}|\\^`\[\]]+', content)
-            
+
             for url in urls:
                 if url not in citations:
                     citations.append(url)
-        
+
         return citations[:10]  # Limit to top 10
+
+    def _save_query_result(self, query: str, result: Dict[str, Any]):
+        """Save query result to outputs folder."""
+        try:
+            # Create outputs directory if it doesn't exist
+            outputs_dir = Path(project_root) / "outputs"
+            outputs_dir.mkdir(exist_ok=True)
+
+            # Generate timestamp-based filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"query_{timestamp}.json"
+            filepath = outputs_dir / filename
+
+            # Extract citations
+            citations = self._extract_citations(result)
+
+            # Prepare output data
+            output_data = {
+                "timestamp": datetime.now().isoformat(),
+                "query": query,
+                "response": result.get("response", ""),
+                "metadata": result.get("metadata", {}),
+                "citations": citations,
+                "conversation_history": result.get("conversation_history", [])
+            }
+
+            # Save to file
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(output_data, f, indent=2, ensure_ascii=False)
+
+            print(f"\n💾 Result saved to: {filepath.relative_to(project_root)}")
+
+        except Exception as e:
+            logging.warning(f"Failed to save query result: {e}")
 
     def _should_show_traces(self) -> bool:
         """Check if agent traces should be displayed."""
@@ -237,19 +300,19 @@ class CLI:
         """Display a summary of the agent conversation."""
         if not conversation_history:
             return
-            
+
         print("\n" + "-" * 70)
         print("🔍 CONVERSATION SUMMARY")
         print("-" * 70)
-        
+
         for i, msg in enumerate(conversation_history, 1):
             agent = msg.get("source", "Unknown")
             content = msg.get("content", "")
-            
+
             # Truncate long content
             preview = content[:150] + "..." if len(content) > 150 else content
             preview = preview.replace("\n", " ")
-            
+
             print(f"\n{i}. {agent}:")
             print(f"   {preview}")
 
@@ -267,7 +330,8 @@ def main():
         help="Path to configuration file"
     )
 
-    args = parser.parse_args()
+    # Parse known args to avoid errors when invoked via main.py with extra flags
+    args, _unknown = parser.parse_known_args()
 
     # Run CLI
     cli = CLI(config_path=args.config)

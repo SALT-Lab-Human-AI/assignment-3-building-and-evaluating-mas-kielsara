@@ -7,7 +7,7 @@ Usage:
     python -m src.ui.cli
     # or
     python main.py --mode cli
-    
+
     # Run Streamlit web UI:
     streamlit run src/ui/streamlit_app.py
     # or
