@@ -6,18 +6,19 @@ This can be used as a server-side hook or in CI/CD for strict enforcement.
 
 import os
 import sys
-import subprocess
+import subprocess  # nosec B404
 import json
 from pathlib import Path
 
 
 def run_command(cmd, check=True):
     """Run a command and return the result."""
+    # Allow shell usage here for pipeline convenience; inputs are static commands
     result = subprocess.run(
         cmd,
-        shell=True,
+        shell=True,  # nosec B602
         capture_output=True,
-        text=True
+        text=True,
     )
     if check and result.returncode != 0:
         print(f"❌ Command failed: {cmd}")

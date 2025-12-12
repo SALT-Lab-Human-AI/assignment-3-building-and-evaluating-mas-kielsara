@@ -166,8 +166,14 @@ class CLI:
 
     def _clear_screen(self):
         """Clear the terminal screen."""
-        import os
-        os.system('clear' if os.name == 'posix' else 'cls')
+        import shutil
+        import subprocess  # nosec B404
+
+        # Use subprocess with explicit path; avoid shell=True
+        clear_cmd = "clear" if os.name == "posix" else "cls"
+        cmd_path = shutil.which(clear_cmd)
+        if cmd_path:
+            subprocess.run([cmd_path], check=False)  # nosec B603
 
     def _print_stats(self):
         """Print system statistics."""

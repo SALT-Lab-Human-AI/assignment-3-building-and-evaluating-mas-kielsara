@@ -22,9 +22,9 @@ def run_cli():
 
 def run_web():
     """Run web interface."""
-    import subprocess
+    import subprocess  # nosec B404
     print("Starting Streamlit web interface...")
-    subprocess.run(["streamlit", "run", "src/ui/streamlit_app.py"])
+    subprocess.run([sys.executable, "-m", "streamlit", "run", "src/ui/streamlit_app.py"], check=False)  # nosec B603
 
 
 async def run_evaluation():
@@ -74,9 +74,9 @@ async def run_evaluation():
 
 def run_autogen():
     """Run AutoGen example."""
-    import subprocess
+    import subprocess  # nosec B404
     print("Running AutoGen example...")
-    subprocess.run([sys.executable, "example_autogen.py"])
+    subprocess.run([sys.executable, "example_autogen.py"], check=False)  # nosec B603
 
 
 def main():
