@@ -85,12 +85,19 @@ def main():
         description="Multi-Agent Research Assistant"
     )
     # Some environments may not show --mode in help if choices are mis-parsed; ensure it's present
+    # Accept both flag and optional positional for robustness across shells
     parser.add_argument(
         "--mode",
         dest="mode",
         choices=["cli", "web", "evaluate", "autogen"],
-        default="autogen",
-        help="Mode to run: cli, web, evaluate, or autogen (default)",
+        default=None,
+        help="Mode to run: cli, web, evaluate, or autogen",
+    )
+    parser.add_argument(
+        "mode_positional",
+        nargs="?",
+        choices=["cli", "web", "evaluate", "autogen"],
+        help="Mode to run (positional alternative)",
     )
     parser.add_argument(
         "--config",
@@ -99,14 +106,18 @@ def main():
         help="Path to configuration file",
     )
 
+    # Use parse_known_args so unknown flags do not hard fail
     args, unknown = parser.parse_known_args()
 
+    # Resolve mode: prefer --mode, fall back to positional, then default autogen
+    mode = args.mode or args.mode_positional or "autogen"
+
     # Gracefully ignore unknown args rather than erroring
-    if args.mode == "cli":
+    if mode == "cli":
         run_cli()
-    elif args.mode == "web":
+    elif mode == "web":
         run_web()
-    elif args.mode == "evaluate":
+    elif mode == "evaluate":
         asyncio.run(run_evaluation())
     else:
         run_autogen()

@@ -138,3 +138,6 @@ logging:
   file: "logs/system.log"
   safety_log: "logs/safety_events.log"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+ui:
+  verbose: true

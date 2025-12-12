@@ -324,7 +324,8 @@ def main():
         help="Path to configuration file"
     )
 
-    args = parser.parse_args()
+    # Parse known args to avoid errors when invoked via main.py with extra flags
+    args, _unknown = parser.parse_known_args()
 
     # Run CLI
     cli = CLI(config_path=args.config)

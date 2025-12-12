@@ -231,7 +231,7 @@ When writing:
 6. Include a short references section at the end
 7. Ensure the response directly answers the original query
 
-End when the draft is ready with "DRAFT COMPLETE" and include a final line "FINISH SESSION" to signal completion."""
+End the draft with "DRAFT COMPLETE". Do NOT finalize the session; the Critic must review before completion."""
 
     # Use custom prompt from config if available
     custom_prompt = agent_config.get("system_prompt", "")
@@ -278,7 +278,7 @@ Evaluate the research and writing on these criteria:
 4. **Accuracy**: Are there any factual errors or contradictions?
 5. **Clarity**: Is the writing clear and well-organized?
 
-Provide constructive but concise feedback. If the draft is acceptable, reply with "APPROVED - RESEARCH COMPLETE" followed by "FINISH SESSION". If revisions are needed, say "NEEDS REVISION" and list fixes."""
+Provide constructive but concise feedback. If the draft is acceptable, reply with "APPROVED - RESEARCH COMPLETE" and then finalize with "FINISH SESSION". If revisions are needed, say "NEEDS REVISION" and list fixes."""
 
     # Use custom prompt from config if available
     custom_prompt = agent_config.get("system_prompt", "")
