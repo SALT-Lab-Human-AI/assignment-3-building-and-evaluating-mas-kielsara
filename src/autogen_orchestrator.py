@@ -202,17 +202,22 @@ class AutoGenOrchestrator:
 
         self.logger.info(f"Extracted {len(messages)} messages")
 
-        # Extract final response
+        # Extract final response - specifically look for Writer's substantive content
         final_response = ""
         if messages:
-            # Get the last message from Writer or Critic
+            # Find the Writer's last substantive message (not just "DRAFT COMPLETE")
             for msg in reversed(messages):
-                if msg.get("source") in ["Writer", "Critic"]:
-                    final_response = msg.get("content", "")
-                    break
+                if msg.get("source") == "Writer":
+                    content = msg.get("content", "")
+                    # Skip coordination-only messages
+                    if content and len(content) > 50 and not content.strip() in ["DRAFT COMPLETE", "APPROVED - RESEARCH COMPLETE"]:
+                        final_response = content
+                        self.logger.info(f"Found Writer response: {len(content)} chars")
+                        break
 
-        # If no response found, use the last message
+        # If no Writer response found, use the last message
         if not final_response and messages:
+            self.logger.warning("No substantive Writer response found, using last message")
             final_response = messages[-1].get("content", "")
 
         return self._extract_results(query, messages, final_response)

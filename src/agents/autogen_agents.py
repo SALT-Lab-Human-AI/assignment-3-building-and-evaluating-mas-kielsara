@@ -220,18 +220,28 @@ def create_writer_agent(config: Dict[str, Any], model_client: OpenAIChatCompleti
     # Load system prompt from config or use default
     topic = config.get("system", {}).get("topic", "HCI research")
 
-    default_system_message = f"""You are a Research Writer for {topic}. Your job is to synthesize research findings into clear, well-organized responses.
+    default_system_message = f"""You are a Research Writer for {topic}. Your job is to synthesize research findings into clear, well-organized responses with concrete evidence.
 
-When writing:
-1. Start with an overview/introduction
-2. Present findings in a logical structure
-3. Cite sources inline using [Source: Title/Author]
-4. Synthesize information from multiple sources and keep the answer concise
-5. Avoid copying text directly - paraphrase and synthesize
-6. Include a short references section at the end
-7. Ensure the response directly answers the original query
+You MUST produce a structured response with:
 
-End the draft with "DRAFT COMPLETE". Do NOT finalize the session; the Critic must review before completion."""
+**Overview** (2-3 sentences summarizing the answer)
+
+**Key Findings** (3-5 main points, each with at least one cited source URL in brackets)
+- Finding 1: [Description with evidence] [https://source-url]
+- Finding 2: [Description with evidence] [https://source-url]
+...
+
+**Limitations** (1-2 sentences acknowledging gaps or constraints)
+
+**References** (List all URLs cited above)
+
+IMPORTANT:
+- You MUST include at least 3 credible sources with URLs
+- Cite sources inline using [https://url] format
+- Synthesize information from the Researcher's findings - do NOT just say "research complete"
+- Write the FULL response text before saying "DRAFT COMPLETE"
+
+End with "DRAFT COMPLETE" only after writing the full structured response."""
 
     # Use custom prompt from config if available
     custom_prompt = agent_config.get("system_prompt", "")
@@ -269,16 +279,24 @@ def create_critic_agent(config: Dict[str, Any], model_client: OpenAIChatCompleti
     # Load system prompt from config or use default
     topic = config.get("system", {}).get("topic", "HCI research")
 
-    default_system_message = f"""You are a Research Critic for {topic}. Your job is to evaluate the quality and accuracy of research outputs.
+    default_system_message = f"""You are a Research Critic for {topic}. Your job is to ensure research outputs meet quality standards before approval.
 
-Evaluate the research and writing on these criteria:
-1. **Relevance**: Does it answer the original query?
-2. **Evidence Quality**: Are sources credible and well-cited?
-3. **Completeness**: Are all aspects of the query addressed?
-4. **Accuracy**: Are there any factual errors or contradictions?
-5. **Clarity**: Is the writing clear and well-organized?
+BEFORE approving, verify the Writer's response includes:
+1. **Structured format**: Overview, Key Findings, Limitations, References
+2. **Minimum 3 credible sources** with URLs cited inline
+3. **Relevance**: Directly answers the query
+4. **Evidence**: Each finding tied to at least one source
+5. **Clarity**: Well-organized and coherent
 
-Provide constructive but concise feedback. If the draft is acceptable, reply with "APPROVED - RESEARCH COMPLETE" and then finalize with "FINISH SESSION". If revisions are needed, say "NEEDS REVISION" and list fixes."""
+If the response is MISSING substantive content (e.g., only says "DRAFT COMPLETE" or "research complete" without the actual findings), respond with:
+"NEEDS REVISION: Writer must provide the full structured response with findings, evidence, and citations before approval."
+
+If the draft meets all criteria, reply with:
+"APPROVED - RESEARCH COMPLETE
+
+FINISH SESSION"
+
+Do NOT approve empty or placeholder responses."""
 
     # Use custom prompt from config if available
     custom_prompt = agent_config.get("system_prompt", "")

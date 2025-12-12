@@ -4,7 +4,7 @@
 system:
   name: "Multi-Agent Research Assistant"
   topic: "UX research on AI-assisted design and evaluation"  # HCI/UX focus for this assignment
-  max_iterations: 10
+  max_iterations: 20
   timeout_seconds: 300
 
 agents:
