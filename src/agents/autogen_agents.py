@@ -18,7 +18,6 @@ from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_core.models import ModelFamily
 # Import our research tools
 from src.tools.web_search import web_search
-from src.tools.paper_search import paper_search
 
 
 def create_model_client(config: Dict[str, Any]) -> OpenAIChatCompletionClient:
@@ -185,17 +184,12 @@ Finish once you have strong evidence and append "RESEARCH COMPLETE"."""
         description="Search the web for articles, blog posts, and general information. Returns formatted search results with titles, URLs, and snippets."
     )
 
-    paper_search_tool = FunctionTool(
-        paper_search,
-        description="Search academic papers on Semantic Scholar. Returns papers with authors, abstracts, citation counts, and URLs. Use year_from parameter to filter recent papers."
-    )
-
-    # Create the researcher with tool access
+    # Create the researcher with tool access (web search only - Semantic Scholar requires API key)
     researcher = AssistantAgent(
         name="Researcher",
         model_client=model_client,
-        tools=[web_search_tool, paper_search_tool],
-        description="Gathers evidence from web and academic sources using search tools",
+        tools=[web_search_tool],
+        description="Gathers evidence from web sources using search tools",
         system_message=system_message,
     )
 
