@@ -32,6 +32,7 @@ async def run_evaluation():
     import yaml
     from dotenv import load_dotenv
     from src.autogen_orchestrator import AutoGenOrchestrator
+    from src.evaluation.evaluator import SystemEvaluator
     
     # Load environment variables
     load_dotenv()
@@ -40,32 +41,35 @@ async def run_evaluation():
     with open("config.yaml", 'r') as f:
         config = yaml.safe_load(f)
 
-    # Initialize AutoGen orchestrator
+    # Initialize orchestrator and evaluator
     print("Initializing AutoGen orchestrator...")
     orchestrator = AutoGenOrchestrator(config)
-    
-    # For now, run a simple test query
-    # TODO: Integrate with SystemEvaluator for full evaluation
+    evaluator = SystemEvaluator(config, orchestrator=orchestrator)
+
+    # Run evaluation on the provided dataset (defaults to data/example_queries.json)
     print("\n" + "=" * 70)
-    print("RUNNING TEST QUERY")
+    print("RUNNING EVALUATION (LLM-as-a-Judge)")
     print("=" * 70)
-    
-    test_query = "What are the key principles of accessible user interface design?"
-    print(f"\nQuery: {test_query}\n")
-    
-    result = orchestrator.process_query(test_query)
-    
+
+    report = await evaluator.evaluate_system("data/example_queries.json")
+
+    # Print concise summary
+    summary = report.get("summary", {})
+    scores = report.get("scores", {})
+
     print("\n" + "=" * 70)
-    print("RESULTS")
+    print("EVALUATION SUMMARY")
     print("=" * 70)
-    print(f"\nResponse:\n{result.get('response', 'No response generated')}")
-    print(f"\nMetadata:")
-    print(f"  - Messages: {result.get('metadata', {}).get('num_messages', 0)}")
-    print(f"  - Sources: {result.get('metadata', {}).get('num_sources', 0)}")
-    
-    print("\n" + "=" * 70)
-    print("Note: Full evaluation with SystemEvaluator can be implemented")
-    print("=" * 70)
+    print(f"Queries evaluated: {summary.get('total_queries', 0)}")
+    print(f"Successful: {summary.get('successful', 0)} | Failed: {summary.get('failed', 0)}")
+    print(f"Success rate: {summary.get('success_rate', 0.0):.1%}")
+    print(f"Overall avg score: {scores.get('overall_average', 0.0):.3f}")
+
+    print("\nScores by criterion:")
+    for criterion, score in scores.get("by_criterion", {}).items():
+        print(f"  - {criterion}: {score:.3f}")
+
+    print("\nDetailed results saved under outputs/ (JSON + summary).")
 
 
 def run_autogen():
@@ -80,27 +84,31 @@ def main():
     parser = argparse.ArgumentParser(
         description="Multi-Agent Research Assistant"
     )
+    # Some environments may not show --mode in help if choices are mis-parsed; ensure it's present
     parser.add_argument(
         "--mode",
+        dest="mode",
         choices=["cli", "web", "evaluate", "autogen"],
         default="autogen",
-        help="Mode to run: cli, web, evaluate, or autogen (default)"
+        help="Mode to run: cli, web, evaluate, or autogen (default)",
     )
     parser.add_argument(
         "--config",
+        dest="config",
         default="config.yaml",
-        help="Path to configuration file"
+        help="Path to configuration file",
     )
 
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
 
+    # Gracefully ignore unknown args rather than erroring
     if args.mode == "cli":
         run_cli()
     elif args.mode == "web":
         run_web()
     elif args.mode == "evaluate":
         asyncio.run(run_evaluation())
-    elif args.mode == "autogen":
+    else:
         run_autogen()
 
 

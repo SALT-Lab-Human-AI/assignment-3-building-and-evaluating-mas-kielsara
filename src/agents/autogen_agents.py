@@ -32,14 +32,14 @@ def create_model_client(config: Dict[str, Any]) -> OpenAIChatCompletionClient:
         OpenAIChatCompletionClient configured for the specified provider
     """
     model_config = config.get("models", {}).get("default", {})
-    provider = model_config.get("provider", "groq")
-    
+    provider = model_config.get("provider", "openai")
+
     # Groq configuration (uses OpenAI-compatible API)
     if provider == "groq":
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
             raise ValueError("GROQ_API_KEY not found in environment")
-        
+
         return OpenAIChatCompletionClient(
             model=model_config.get("name", "llama-3.3-70b-versatile"),
             api_key=api_key,
@@ -48,28 +48,16 @@ def create_model_client(config: Dict[str, Any]) -> OpenAIChatCompletionClient:
                 "json_output": False,
                 "vision": False,
                 "function_calling": True,
-            }
+            },
         )
-    
-    # OpenAI configuration
+
+    # OpenAI configuration (default, using a small model to protect shared quota)
     elif provider == "openai":
         api_key = os.getenv("OPENAI_API_KEY")
         base_url = os.getenv("OPENAI_BASE_URL")
         if not api_key:
             raise ValueError("OPENAI_API_KEY not found in environment")
-        
-        return OpenAIChatCompletionClient(
-            model=model_config.get("name", "gpt-4o-mini"),
-            api_key=api_key,
-            base_url=base_url,
-        )
 
-    elif provider == "vllm":
-        api_key = os.getenv("OPENAI_API_KEY")
-        base_url = os.getenv("OPENAI_BASE_URL")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found in environment")
-        
         return OpenAIChatCompletionClient(
             model=model_config.get("name", "gpt-4o-mini"),
             api_key=api_key,
@@ -82,7 +70,27 @@ def create_model_client(config: Dict[str, Any]) -> OpenAIChatCompletionClient:
                 "structured_output": True,
             },
         )
-    
+
+    # vLLM (OpenAI-compatible endpoint)
+    elif provider == "vllm":
+        api_key = os.getenv("OPENAI_API_KEY")
+        base_url = os.getenv("OPENAI_BASE_URL")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY not found in environment")
+
+        return OpenAIChatCompletionClient(
+            model=model_config.get("name", "gpt-4o-mini"),
+            api_key=api_key,
+            base_url=base_url,
+            model_info={
+                "vision": False,
+                "function_calling": True,
+                "json_output": True,
+                "family": ModelFamily.GPT_4O,
+                "structured_output": True,
+            },
+        )
+
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
@@ -104,7 +112,9 @@ def create_planner_agent(config: Dict[str, Any], model_client: OpenAIChatComplet
     agent_config = config.get("agents", {}).get("planner", {})
     
     # Load system prompt from config or use default
-    default_system_message = """You are a Research Planner. Your job is to break down research queries into clear, actionable steps.
+    topic = config.get("system", {}).get("topic", "HCI research")
+
+    default_system_message = f"""You are a Research Planner for {topic}. Your job is to break down research queries into clear, actionable steps.
 
 When given a research query, you should:
 1. Identify the key concepts and topics to investigate
@@ -113,7 +123,8 @@ When given a research query, you should:
 4. Outline how the findings should be synthesized
 
 Provide your plan in a structured format with numbered steps.
-Be specific about what information to gather and why it's relevant."""
+Be specific about what information to gather and why it's relevant.
+End your plan with the string "PLAN COMPLETE" so the team knows to proceed."""
 
     # Use custom prompt from config if available, otherwise use default
     custom_prompt = agent_config.get("system_prompt", "")
@@ -149,14 +160,17 @@ def create_researcher_agent(config: Dict[str, Any], model_client: OpenAIChatComp
     agent_config = config.get("agents", {}).get("researcher", {})
     
     # Load system prompt from config or use default
-    default_system_message = """You are a Research Assistant. Your job is to gather high-quality information from academic papers and web sources.
+    topic = config.get("system", {}).get("topic", "HCI research")
+
+    default_system_message = f"""You are a Research Assistant focused on {topic}. Your job is to gather high-quality information from academic papers and web sources.
 
 You have access to tools for web search and paper search. When conducting research:
-1. Use both web search and paper search for comprehensive coverage
-2. Look for recent, high-quality sources
-3. Extract key findings, quotes, and data
-4. Note all source URLs and citations
-5. Gather evidence that directly addresses the research query"""
+1. Use both web search and paper search for comprehensive coverage (call the tools when needed)
+2. Prioritize recent, high-quality, UX/HCI-relevant sources
+3. Extract key findings, quotes, and data with URLs
+4. Provide short bullet points with citations
+5. Keep responses concise to conserve tokens.
+Finish once you have strong evidence and append "RESEARCH COMPLETE"."""
 
     # Use custom prompt from config if available
     custom_prompt = agent_config.get("system_prompt", "")
@@ -204,18 +218,20 @@ def create_writer_agent(config: Dict[str, Any], model_client: OpenAIChatCompleti
     agent_config = config.get("agents", {}).get("writer", {})
     
     # Load system prompt from config or use default
-    default_system_message = """You are a Research Writer. Your job is to synthesize research findings into clear, well-organized responses.
+    topic = config.get("system", {}).get("topic", "HCI research")
+
+    default_system_message = f"""You are a Research Writer for {topic}. Your job is to synthesize research findings into clear, well-organized responses.
 
 When writing:
 1. Start with an overview/introduction
 2. Present findings in a logical structure
 3. Cite sources inline using [Source: Title/Author]
-4. Synthesize information from multiple sources
+4. Synthesize information from multiple sources and keep the answer concise
 5. Avoid copying text directly - paraphrase and synthesize
-6. Include a references section at the end
+6. Include a short references section at the end
 7. Ensure the response directly answers the original query
 
-Format your response professionally with clear headings, paragraphs, in-text citations, and a References section at the end."""
+End when the draft is ready with "DRAFT COMPLETE" and include a final line "FINISH SESSION" to signal completion."""
 
     # Use custom prompt from config if available
     custom_prompt = agent_config.get("system_prompt", "")
@@ -251,7 +267,9 @@ def create_critic_agent(config: Dict[str, Any], model_client: OpenAIChatCompleti
     agent_config = config.get("agents", {}).get("critic", {})
     
     # Load system prompt from config or use default
-    default_system_message = """You are a Research Critic. Your job is to evaluate the quality and accuracy of research outputs.
+    topic = config.get("system", {}).get("topic", "HCI research")
+
+    default_system_message = f"""You are a Research Critic for {topic}. Your job is to evaluate the quality and accuracy of research outputs.
 
 Evaluate the research and writing on these criteria:
 1. **Relevance**: Does it answer the original query?
@@ -260,7 +278,7 @@ Evaluate the research and writing on these criteria:
 4. **Accuracy**: Are there any factual errors or contradictions?
 5. **Clarity**: Is the writing clear and well-organized?
 
-Provide constructive but thorough feedback. End your evaluation with either "TERMINATE" if approved, or suggest specific improvements."""
+Provide constructive but concise feedback. If the draft is acceptable, reply with "APPROVED - RESEARCH COMPLETE" followed by "FINISH SESSION". If revisions are needed, say "NEEDS REVISION" and list fixes."""
 
     # Use custom prompt from config if available
     custom_prompt = agent_config.get("system_prompt", "")
@@ -299,7 +317,7 @@ def create_research_team(config: Dict[str, Any]) -> RoundRobinGroupChat:
     critic = create_critic_agent(config, model_client)
     
     # Create termination condition
-    termination = TextMentionTermination("TERMINATE")
+    termination = TextMentionTermination("FINISH SESSION")
     
     # Create team with round-robin ordering
     team = RoundRobinGroupChat(

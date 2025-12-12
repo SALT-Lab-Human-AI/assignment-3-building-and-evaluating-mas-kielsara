@@ -3,7 +3,7 @@
 
 system:
   name: "Multi-Agent Research Assistant"
-  topic: "HCI Research"  # Change this to your chosen topic
+  topic: "UX research on AI-assisted design and evaluation"  # HCI/UX focus for this assignment
   max_iterations: 10
   timeout_seconds: 300
 
@@ -62,19 +62,19 @@ agents:
     #   Say "APPROVED - RESEARCH COMPLETE" or "NEEDS REVISION".
 
 models:
-  # Default model for agents (Groq)
+  # Default model for agents (use a small OpenAI model to stay within the shared quota)
   default:
-    provider: "vllm"
-    name: "openai/gpt-oss-20b"
-    temperature: 0.7
-    max_tokens: 2048
+    provider: "openai"
+    name: "gpt-4o-mini"
+    temperature: 0.6
+    max_tokens: 1200
 
-  # Judge model for evaluation
+  # Judge model for evaluation (also small/cheap)
   judge:
-    provider: "vllm"
-    name: "openai/gpt-oss-20b"
-    temperature: 0.3
-    max_tokens: 1024
+    provider: "openai"
+    name: "gpt-4o-mini"
+    temperature: 0.2
+    max_tokens: 600
 
 tools:
   web_search:
@@ -109,7 +109,7 @@ safety:
 
 evaluation:
   enabled: true
-  num_test_queries: 10
+  num_test_queries: 6  # keep costs low but still cover >5 queries
 
   # Judge criteria
   criteria:

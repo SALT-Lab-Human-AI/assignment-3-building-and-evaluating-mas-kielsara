@@ -7,6 +7,10 @@ from typing import Dict, Any, List, Optional
 import logging
 from datetime import datetime
 import json
+from pathlib import Path
+
+from .input_guardrail import InputGuardrail
+from .output_guardrail import OutputGuardrail
 
 
 class SafetyManager:
@@ -31,6 +35,7 @@ class SafetyManager:
         self.enabled = config.get("enabled", True)
         self.log_events = config.get("log_events", True)
         self.logger = logging.getLogger("safety")
+        self.log_file = config.get("safety_log_file") or config.get("logging", {}).get("safety_log")
 
         # Safety event log
         self.safety_events: List[Dict[str, Any]] = []
@@ -45,14 +50,8 @@ class SafetyManager:
 
         # Violation response strategy
         self.on_violation = config.get("on_violation", {})
-
-        # TODO: Initialize guardrail framework
-        # Examples:
-        # from guardrails import Guard
-        # self.guard = Guard(...)
-        # OR
-        # from nemoguardrails import RailsConfig
-        # self.rails = RailsConfig(...)
+        self.input_guardrail = InputGuardrail({"system": config.get("system", {}), "safety": config})
+        self.output_guardrail = OutputGuardrail({"system": config.get("system", {})})
 
     def check_input_safety(self, query: str) -> Dict[str, Any]:
         """
@@ -71,45 +70,35 @@ class SafetyManager:
         - Return detailed violation information
         """
         if not self.enabled:
-            return {"safe": True}
+            return {"safe": True, "violations": [], "sanitized": query}
 
-        # TODO: Implement actual safety checks
-        # Example using Guardrails AI:
-        # result = self.guard.validate(query)
-        # if result.validation_passed:
-        #     return {"safe": True}
-        # else:
-        #     return {
-        #         "safe": False,
-        #         "violations": result.errors,
-        #         "sanitized_query": result.validated_output
-        #     }
+        result = self.input_guardrail.validate(query)
+        is_safe = result.get("valid", True)
+        violations = result.get("violations", [])
 
-        # Placeholder implementation with simple keyword checks
-        violations = []
-
-        # Check for prohibited keywords (very basic example)
-        prohibited_keywords = ["hack", "attack", "exploit", "bypass"]
-        for keyword in prohibited_keywords:
-            if keyword.lower() in query.lower():
-                violations.append({
-                    "category": "potentially_harmful",
-                    "reason": f"Query contains prohibited keyword: {keyword}",
-                    "severity": "medium"
-                })
-
-        is_safe = len(violations) == 0
-
-        # Log safety event
         if not is_safe and self.log_events:
             self._log_safety_event("input", query, violations, is_safe)
 
+        response_action = self.on_violation.get("action", "refuse") if not is_safe else None
+        response_message = None
+        if not is_safe:
+            if response_action == "sanitize":
+                response_message = result.get("sanitized_input", "")
+            else:
+                response_message = self.on_violation.get(
+                    "message",
+                    "I cannot process this request due to safety policies."
+                )
+
         return {
             "safe": is_safe,
-            "violations": violations
+            "violations": violations,
+            "sanitized": result.get("sanitized_input", query),
+            "action": response_action,
+            "message": response_message,
         }
 
-    def check_output_safety(self, response: str) -> Dict[str, Any]:
+    def check_output_safety(self, response: str, sources: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         Check if output response is safe to return.
 
@@ -126,42 +115,30 @@ class SafetyManager:
         - Sanitize or redact unsafe content
         """
         if not self.enabled:
-            return {"safe": True, "response": response}
+            return {"safe": True, "response": response, "violations": []}
 
-        # TODO: Implement actual output safety checks
-        # Example checks:
-        # - No PII (personal identifiable information)
-        # - No harmful instructions
-        # - Factual consistency
-        # - No bias or offensive language
+        guard_result = self.output_guardrail.validate(response, sources)
+        is_safe = guard_result.get("valid", True)
+        violations = guard_result.get("violations", [])
+        sanitized_response = guard_result.get("sanitized_output", response)
 
-        violations = []
-
-        # Placeholder implementation
-        is_safe = len(violations) == 0
-
-        # Log safety event
         if not is_safe and self.log_events:
             self._log_safety_event("output", response, violations, is_safe)
 
-        result = {
-            "safe": is_safe,
-            "violations": violations,
-            "response": response
-        }
-
-        # Apply sanitization if configured
         if not is_safe:
             action = self.on_violation.get("action", "refuse")
-            if action == "sanitize":
-                result["response"] = self._sanitize_response(response, violations)
-            elif action == "refuse":
-                result["response"] = self.on_violation.get(
+            if action == "refuse":
+                sanitized_response = self.on_violation.get(
                     "message",
                     "I cannot provide this response due to safety policies."
                 )
+            # sanitize action already handled above
 
-        return result
+        return {
+            "safe": is_safe,
+            "violations": violations,
+            "response": sanitized_response,
+        }
 
     def _sanitize_response(self, response: str, violations: List[Dict[str, Any]]) -> str:
         """
@@ -200,10 +177,10 @@ class SafetyManager:
         self.logger.warning(f"Safety event: {event_type} - safe={is_safe}")
 
         # Write to safety log file if configured
-        log_file = self.config.get("safety_log_file")
-        if log_file and self.log_events:
+        if self.log_file and self.log_events:
             try:
-                with open(log_file, "a") as f:
+                Path(self.log_file).parent.mkdir(exist_ok=True, parents=True)
+                with open(self.log_file, "a", encoding="utf-8") as f:
                     f.write(json.dumps(event) + "\n")
             except Exception as e:
                 self.logger.error(f"Failed to write safety log: {e}")

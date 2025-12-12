@@ -135,14 +135,7 @@ class SystemEvaluator:
         # Run through orchestrator if available
         if self.orchestrator:
             try:
-                # Call orchestrator's process_query method
-                # TODO: YOUR CODE HERE
-                # Need to implement this in their orchestrator
-                response_data = self.orchestrator.process_query(query)
-                
-                # If process_query is async, use:
-                # response_data = await self.orchestrator.process_query(query)
-                
+                response_data = await asyncio.to_thread(self.orchestrator.process_query, query)
             except Exception as e:
                 self.logger.error(f"Error processing query through orchestrator: {e}")
                 response_data = {
@@ -161,11 +154,16 @@ class SystemEvaluator:
                 "metadata": {"num_sources": 0}
             }
 
+        # Extract sources/citations for judging
+        sources = response_data.get("metadata", {}).get("sources", [])
+        if not sources:
+            sources = self._extract_urls(response_data.get("conversation_history", []))
+
         # Evaluate response using LLM-as-a-Judge
         evaluation = await self.judge.evaluate(
             query=query,
             response=response_data.get("response", ""),
-            sources=response_data.get("metadata", {}).get("sources", []),
+            sources=sources,
             ground_truth=ground_truth
         )
 
@@ -334,6 +332,26 @@ class SystemEvaluator:
             json.dump(report_data, f, indent=2)
         
         self.logger.info(f"Report data exported to {output_path}")
+
+    def _extract_urls(self, conversation_history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Extract URL strings from conversation history to feed the judge."""
+        import re
+
+        urls = []
+        for msg in conversation_history or []:
+            content = msg.get("content", "")
+            for url in re.findall(r"https?://[^\s<>'\"]+", content):
+                urls.append({"url": url})
+
+        # Deduplicate
+        seen = set()
+        unique_urls = []
+        for item in urls:
+            if item["url"] not in seen:
+                seen.add(item["url"])
+                unique_urls.append(item)
+
+        return unique_urls
 
 
 async def example_simple_evaluation():

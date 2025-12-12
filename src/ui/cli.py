@@ -14,6 +14,9 @@ import asyncio
 from typing import Dict, Any
 import yaml
 import logging
+import json
+import os
+from datetime import datetime
 from dotenv import load_dotenv
 
 from src.autogen_orchestrator import AutoGenOrchestrator
@@ -123,6 +126,9 @@ class CLI:
                     # Display result
                     self._display_result(result)
                     
+                    # Save result to outputs folder
+                    self._save_query_result(query, result)
+                    
                 except Exception as e:
                     print(f"\nError processing query: {e}")
                     logging.exception("Error processing query")
@@ -205,6 +211,19 @@ class CLI:
             print(f"  • Sources gathered: {metadata.get('num_sources', 0)}")
             print(f"  • Agents involved: {', '.join(metadata.get('agents_involved', []))}")
 
+        safety_events = metadata.get("safety_events", []) if metadata else []
+        if safety_events:
+            print("\n" + "-" * 70)
+            print("🛡️  SAFETY")
+            print("-" * 70)
+            for event in safety_events:
+                status = "SAFE" if event.get("safe", True) else "BLOCKED"
+                print(f"  • {event.get('type', 'unknown').upper()}: {status}")
+                for violation in event.get("violations", []):
+                    reason = violation.get("reason") or violation.get("validator") or "Unknown"
+                    severity = violation.get("severity", "")
+                    print(f"     - {reason} ({severity})")
+
         # Display conversation summary if verbose mode
         if self._should_show_traces():
             self._display_conversation_summary(result.get("conversation_history", []))
@@ -218,6 +237,10 @@ class CLI:
         for msg in result.get("conversation_history", []):
             content = msg.get("content", "")
             
+            # Handle both string and non-string content
+            if not isinstance(content, str):
+                content = str(content)
+            
             # Find URLs in content
             import re
             urls = re.findall(r'https?://[^\s<>"{}|\\^`\[\]]+', content)
@@ -227,6 +250,40 @@ class CLI:
                     citations.append(url)
         
         return citations[:10]  # Limit to top 10
+
+    def _save_query_result(self, query: str, result: Dict[str, Any]):
+        """Save query result to outputs folder."""
+        try:
+            # Create outputs directory if it doesn't exist
+            outputs_dir = Path(project_root) / "outputs"
+            outputs_dir.mkdir(exist_ok=True)
+            
+            # Generate timestamp-based filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"query_{timestamp}.json"
+            filepath = outputs_dir / filename
+            
+            # Extract citations
+            citations = self._extract_citations(result)
+            
+            # Prepare output data
+            output_data = {
+                "timestamp": datetime.now().isoformat(),
+                "query": query,
+                "response": result.get("response", ""),
+                "metadata": result.get("metadata", {}),
+                "citations": citations,
+                "conversation_history": result.get("conversation_history", [])
+            }
+            
+            # Save to file
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(output_data, f, indent=2, ensure_ascii=False)
+            
+            print(f"\n💾 Result saved to: {filepath.relative_to(project_root)}")
+            
+        except Exception as e:
+            logging.warning(f"Failed to save query result: {e}")
 
     def _should_show_traces(self) -> bool:
         """Check if agent traces should be displayed."""

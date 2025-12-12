@@ -34,6 +34,6 @@ black
 
 # Pre-commit hooks for security and code quality
 pre-commit
-detect-secrets
-gitleaks
 bandit
+detect-secrets
+# gitleaks is not a Python package; install separately via binary or Chocolatey

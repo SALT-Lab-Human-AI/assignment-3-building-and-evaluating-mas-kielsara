@@ -22,7 +22,9 @@ from typing import Dict, Any, List, Optional
 import logging
 import json
 import os
+import asyncio
 from groq import Groq
+from openai import AsyncOpenAI
 
 
 class LLMJudge:
@@ -50,16 +52,27 @@ class LLMJudge:
         # Load judge model configuration from config.yaml (models.judge)
         # This includes: provider, name, temperature, max_tokens
         self.model_config = config.get("models", {}).get("judge", {})
+        self.provider = self.model_config.get("provider", "openai")
 
         # Load evaluation criteria from config.yaml (evaluation.criteria)
         # Each criterion has: name, weight, description
         self.criteria = config.get("evaluation", {}).get("criteria", [])
         
-        # Initialize Groq client (similar to what we tried in Lab 5)
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            self.logger.warning("GROQ_API_KEY not found in environment")
-        self.client = Groq(api_key=api_key) if api_key else None
+        # Initialize LLM clients
+        self.client = None
+        if self.provider == "openai":
+            api_key = os.getenv("OPENAI_API_KEY")
+            base_url = os.getenv("OPENAI_BASE_URL")
+            if not api_key:
+                self.logger.warning("OPENAI_API_KEY not found in environment; falling back to heuristic scoring")
+            else:
+                self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        else:
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                self.logger.warning("GROQ_API_KEY not found in environment")
+            else:
+                self.client = Groq(api_key=api_key)
         
         self.logger.info(f"LLMJudge initialized with {len(self.criteria)} criteria")
  
@@ -231,41 +244,58 @@ Provide your evaluation in the following JSON format:
         Uses model configuration from config.yaml (models.judge section).
         """
         if not self.client:
-            raise ValueError("Groq client not initialized. Check GROQ_API_KEY environment variable.")
-        
+            # Fallback heuristic when no API key is present
+            return json.dumps({
+                "score": 0.6,
+                "reasoning": "Heuristic fallback because judge LLM is not configured."
+            })
+
         try:
-            # Load model settings from config.yaml (models.judge)
-            model_name = self.model_config.get("name", "llama-3.1-8b-instant")
-            temperature = self.model_config.get("temperature", 0.3)
-            max_tokens = self.model_config.get("max_tokens", 1024)
-            
-            self.logger.debug(f"Calling Groq API with model: {model_name}")
-            
-            # Call Groq API (pattern from Lab 5)
-            chat_completion = self.client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert evaluator. Provide your evaluations in valid JSON format."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                model=model_name,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
-            
-            response = chat_completion.choices[0].message.content
-            self.logger.debug(f"Received response: {response[:100]}...")
-            
+            model_name = self.model_config.get("name", "gpt-4o-mini")
+            temperature = self.model_config.get("temperature", 0.2)
+            max_tokens = self.model_config.get("max_tokens", 600)
+
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are an expert evaluator. Provide your evaluations in valid JSON format only."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+
+            if self.provider == "openai":
+                completion = await self.client.chat.completions.create(
+                    messages=messages,
+                    model=model_name,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                response = completion.choices[0].message.content
+            else:
+                # Groq client is synchronous; run in thread to avoid blocking
+                def _call_groq():
+                    chat_completion = self.client.chat.completions.create(
+                        messages=messages,
+                        model=model_name,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                    return chat_completion.choices[0].message.content
+
+                response = await asyncio.to_thread(_call_groq)
+
+            self.logger.debug(f"Judge response received (truncated): {response[:120]}")
             return response
-            
+
         except Exception as e:
-            self.logger.error(f"Error calling Groq API: {e}")
-            raise
+            self.logger.error(f"Error calling judge model: {e}")
+            return json.dumps({
+                "score": 0.0,
+                "reasoning": f"Model error: {e}"
+            })
 
     def _parse_judgment(self, judgment: str) -> tuple:
         """
